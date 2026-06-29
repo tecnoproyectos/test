@@ -1,0 +1,58 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<quiz>
+
+  <question type="category">
+    <category> <text>$course$/top/{% if 'Category' in header %}{{ header.Category }}/{% endif %}{{ filename }}</text> </category>
+    <info format="html"> <text></text> </info>
+    <idnumber></idnumber>
+  </question>
+
+{% for question in questions %}
+  {%- set penalty = 0.50 %}
+  {%- set fraction_error = -100 / ((question.Choices | length) - 1) %}
+  <question type="multichoice">
+    <name> <text>{{ question.Title }}</text> </name>
+    <questiontext format="html">
+      <text><![CDATA[
+         <!-- Copyright © {{ header.Copyright }} -->
+         <!-- Licencia {{ header.License }} {{ header.License_link }} -->
+    {%- if question.Image %}
+         <p>{{ question.Question }}</p> 
+         <p><img src="@@PLUGINFILE@@/{{ question.Image.hashname }}" alt="" role="presentation" class="img-fluid atto_image_button_text-bottom" 
+         width="{{ question.Image.display_width }}"></p>
+         ]]></text>
+      <file name="{{ question.Image.hashname }}" path="/" encoding="base64">{{ question.Image.base64 }}</file>
+    {%- else %}
+         <p>{{ question.Question }}</p>
+         ]]></text>
+    {%- endif %}
+    </questiontext>
+    <generalfeedback format="html"> <text></text> </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <penalty>{{ penalty }}</penalty>
+    <hidden>0</hidden>
+    <idnumber></idnumber>
+    <single>true</single>
+    <shuffleanswers>true</shuffleanswers>
+    <answernumbering>abc</answernumbering>
+    <showstandardinstruction>0</showstandardinstruction>
+    <correctfeedback format="moodle_auto_format"> <text>Correcto.</text> </correctfeedback>
+    <partiallycorrectfeedback format="moodle_auto_format"> <text></text> </partiallycorrectfeedback>
+    <incorrectfeedback format="moodle_auto_format"> <text>Incorrecto.</text> </incorrectfeedback>
+	 {%- for Choice in question.Choices %}
+    {% if loop.index == 1 -%}
+    <answer fraction="100" format="html">
+       <text>{{ Choice }}</text>
+       <feedback format="html"> <text>Correcto.</text> </feedback>
+    </answer>
+    {% else -%}
+    <answer fraction="{{ fraction_error }}" format="html">
+       <text>{{ Choice }}</text>
+       <feedback format="html"> <text>Incorrecto.</text> </feedback> 
+    </answer>
+    {% endif -%}
+    {%- endfor %}
+  </question>
+
+{% endfor %}
+</quiz>

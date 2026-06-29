@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<quiz>
+
+  <question type="category">
+    <category> <text>$course$/top/{% if 'Category' in header %}{{ header.Category }}/{% endif %}{{ filename }}</text> </category>
+    <info format="html"> <text></text> </info>
+    <idnumber></idnumber>
+  </question>
+
+{% for question in questions %}
+  <question type="cloze">
+    <name> <text>{{ question.Title }}</text> </name>
+    <questiontext format="html">
+      <text><![CDATA[
+         <!-- Copyright © {{ header.Copyright }} -->
+         <!-- Licencia {{ header.License }} {{ header.License_link }} -->
+    {%- if question.Image %}
+         <div style="text-align: center;"><img src="@@PLUGINFILE@@/{{ question.Image.hashname }}" alt="" role="presentation" width="{{ question.Image.display_width }}"></div>
+         <br>
+         {{ question.Cloze_xml }}]]>
+      </text>
+      <file name="{{ question.Image.hashname }}" path="/" encoding="base64">{{ question.Image.base64 }}</file>
+    {%- else %}
+         {{ question.Cloze_xml }}]]>
+      </text>
+    {%- endif %}
+    </questiontext>
+    <generalfeedback format="html">
+      <text></text>
+    </generalfeedback>
+    <penalty>0.3333333</penalty>
+    <hidden>0</hidden>
+    <idnumber></idnumber>
+  </question>
+
+{% endfor %}
+
+</quiz>

@@ -1,0 +1,27 @@
+﻿
+Category: Test
+Title: Test de preguntas de tipo Cloze
+Copyright: 2022 por Carlos Félix Pardo Martín
+License: Creative Commons Attribution-ShareAlike 4.0
+License_link: https://creativecommons.org/licenses/by-sa/4.0/deed.es
+Show_max: 2
+Num_tries: 2
+
+---
+
+- Title: Título de la pregunta 1
+  Cloze:
+     <strong>Encabezado</strong><br>
+     Frase con respuesta 1 {1}<br>
+     Frase con respuesta dos, tres o cuatro {dos|tres|cuatro}
+
+- Title: Título de la pregunta 2
+  Cloze:
+     <strong>Encabezado</strong><br>
+     Otra {pregunta} más.
+
+- Title: Título de la pregunta 3
+  Cloze:
+     En total hay {tres} preguntas.
+
+

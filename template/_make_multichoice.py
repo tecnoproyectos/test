@@ -1,0 +1,318 @@
+﻿#
+#  Program to convert questionnaries in YAML format to other formats:
+#  Moodle XML and HTML + Json.
+#
+#  Questionary Copyright (c) 2021-2026 Carlos Félix Pardo Martín
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+
+import re
+import os
+import io
+import base64
+import random
+import copy
+import hashlib
+import shutil
+import pathlib
+
+import yaml
+import jinja2
+from PIL import Image
+
+
+def main():
+   """Main program"""
+
+   moodle_template = 'multichoice-moodle-template.xml'
+   json_template = 'multichoice-data-template.json'
+   html_template = 'multichoice-game-template.html'
+
+   multichoice_path = '../source-multichoice'
+   moodle_path = '../build/moodle'
+   html_path = '../build/docs'
+   
+   questionary = Questionary()
+
+   # Process all yaml files of this directory
+   questions_counter = DictCounter()
+   yaml_files = [yaml for yaml in os.listdir(multichoice_path) if yaml[-5:].lower() == '.yaml']
+   for yaml_file in yaml_files:
+      print('\nFile: %s/%s' % (multichoice_path, yaml_file))
+      questions = questionary.read_yaml(yaml_file, path=multichoice_path)
+      questions_counter.add(questions, yaml_file)
+      questionary.moodle_generate(moodle_template, path=moodle_path)
+      questionary.json_generate(json_template, path=html_path)
+      questionary.html_generate(html_template, path=html_path)
+   print('\nTotal questions= %s\n' % str(questions_counter))
+
+   copy_static('static', html_path)
+
+
+def copy_static(source, dest):
+   filenames = [f for f in os.listdir(source)]
+   for f in filenames:
+      f_origen = os.path.join(source, f)
+      f_destino = os.path.join(dest, f)
+      if file_newer(f_origen, f_destino):
+         shutil.copy2(f_origen, f_destino)
+         print('Escrito:', f_origen)
+
+
+def file_newer(f_origen, f_destino):
+   mtime_origen = pathlib.Path(f_origen)
+   mtime_destino = pathlib.Path(f_destino)
+   if not mtime_destino.exists() or mtime_origen.stat().st_mtime > mtime_destino.stat().st_mtime:
+      return True
+   return False
+
+
+class DictCounter():
+   def __init__(self):
+     self.counter = {}
+
+   def add(self, count, name):
+      prefix = re.split('[_ -]', name, maxsplit=1)[0]
+      if prefix in self.counter:
+         self.counter[prefix] += count
+      else:
+         self.counter[prefix] = count
+      
+   def __str__(self):
+      return str(self.counter)
+
+
+
+class Questionary():
+
+   def __init__(self, overwrite_docx=False):
+      self.templates_path = '.'
+      self.images_path = '../images'
+      self.hash_len = 20
+      self.csv_delimiter = ','
+      self.questions = []
+      self.mtime = 0
+      random.seed(1000)
+      
+      
+   def read_yaml(self, filename, path='./'):
+      """Read questions from Yaml file"""
+      yaml_filename = os.path.join(path, filename)
+      self.mtime = os.path.getmtime(yaml_filename)
+      with open(yaml_filename, 'r', encoding='utf-8') as fi:
+         yamldata = fi.read()
+      yaml_files = list(yaml.load_all(yamldata, Loader=yaml.SafeLoader))
+      self.header = yaml_files[0]
+      self.header['Filename'] = os.path.splitext(filename)[0]
+      self.questions = yaml_files[1]
+      self.clean_questions()
+      self.test_errors()
+      self.yaml_path = path
+      self.yaml_file = filename
+      self.filename = os.path.splitext(os.path.basename(filename))[0]
+      self.add_image_info()
+      self.add_title()
+      print('   Readed %d questions' % len(self.questions))
+      return len(self.questions)
+
+
+   def write_file(self, filename, data):
+      old_data = None
+      if os.path.exists(filename):
+         with open(filename, 'r', encoding='utf-8') as fi:
+            old_data = fi.read()
+      if data != old_data:
+         with open(filename, 'w', encoding='utf-8') as fo:
+            print('   Writing: ' + filename)
+            fo.write(data)
+
+
+   def file_older(self, filename1, filename2=False):
+      if filename2:
+         mtime = os.path.getmtime(filename2)
+      else:
+         mtime = self.mtime
+         
+      if not os.path.exists(filename1):
+         return True
+      else:
+         if os.path.getmtime(filename1) < mtime:
+            return True
+         else:
+            return False
+
+
+   def not_key(self, dictionary, key):
+      if key in dictionary and dictionary[key]:
+         return False
+      return True
+
+
+   def clean_questions(self):
+      for question in self.questions:
+         new_text = question['Question'].strip('\n')
+         if new_text != question['Question']:
+            question['Question'] = new_text
+
+
+   def test_errors(self):
+      # Test errors in header
+      if not 'Category' in self.header:
+         print('   Warning: no Category value')
+         self.header['Category'] = 'General'
+      if not 'Copyright' in self.header:
+         print('   Warning: no Copyright value')
+         self.header['Copyright'] = ''
+      if not 'Show_max' in self.header:
+         print('   Warning: no Show_max value')
+         self.header['Show_max'] = 0
+      if not 'Title' in self.header:
+         print('   Warning: no Title value')
+         self.header['Title'] = 'No title available'
+
+      # Test Questions
+      safe_questions = []
+      for question in self.questions:
+         if not question:
+            print('   Error: question empty ')
+            continue
+         if not 'Question' in question:
+            print('   Error: question without text ' + str(question))
+            continue
+         if not 'Choices' in question:
+            print('   Error: question without Choices ' + str(question))
+            continue
+
+         safe_questions.append(question)
+      self.questions = safe_questions
+
+
+   def add_title(self):
+      """Add Title to every question if does not exists"""
+      for question in self.questions:
+         if not 'Title' in question or not question['Title']:
+            question['Title'] = question['Question']
+   
+   
+   def b64encode(self, data):
+      """Return data string text in b64 format"""
+      if isinstance(data, str):
+         data = bytearray(data, 'utf-8')
+      if isinstance(data, int):
+         data = bytearray('%d' % data, 'utf-8')
+      return base64.b64encode(data).decode('ascii')
+
+
+   def read_b64(self, filename):
+      """Read image and returns data in ascii base64 format"""
+      data = open(filename, 'rb').read()
+      return base64.b64encode(data).decode('ascii')
+
+
+   def hashname(self, filename):
+      data = open(filename, 'rb').read()
+      return hashlib.sha224(data).hexdigest()[:self.hash_len] + os.path.splitext(filename)[1]
+
+   
+   def add_image_info(self):
+      """Read images from disk and add it several info and translations"""
+      for question in self.questions:
+         if 'Image' in question and question['Image']:
+            imagedict = {}
+            imagedict['filename'] = os.path.join(self.images_path, question['Image'])
+            if os.path.exists(imagedict['filename']):
+               imagedict['hashname'] = self.hashname(imagedict['filename'])
+               imagedict['path'] = os.path.dirname(imagedict['filename'])
+               imagedict['mtime'] = os.path.getmtime(imagedict['filename'])
+               imagedict['base64'] = self.read_b64(imagedict['filename'])
+               width, height = Image.open(imagedict['filename']).size
+               imagedict['width'] = width
+               imagedict['height'] = height
+               if not 'Image_width' in question:
+                  imagedict['display_width'] = width
+               else:
+                  imagedict['display_width'] = question['Image_width']
+                  del question['Image_width']
+               if imagedict['display_width'] > 800:
+                  print('   Warning image file too large. Display width=%3d  File=%s' % (imagedict['display_width'], imagedict['filename']))
+               question['Image'] = imagedict                  
+            else:
+               print('Image file does not exists: ' + imagedict['filename'])
+               question['Image'] = {}
+         else:
+            question['Image'] = {}
+   
+   
+   def jinja_template(self, template_file):
+      """Load jinja environment and template file.
+         return a jinja template object"""
+      templateLoader = jinja2.FileSystemLoader(searchpath=self.templates_path)
+      templateEnv = jinja2.Environment(loader=templateLoader)
+      self.template = templateEnv.get_template(template_file)
+      
+   
+   def moodle_generate(self, template_file, path='./'):
+      """Genera los cuestionarios en formato Moodle xml a partir de las
+         cuestiones. Se genera un archivo por cada bloque de cuestiones"""
+      xml_filename = os.path.join(path, self.filename + '.xml')
+      self.jinja_template(template_file)
+      xml_data = self.template.render(questions = self.questions, header = self.header, filename = self.filename)
+      self.write_file(xml_filename, xml_data)
+   
+   
+   def suffle_choices(self, question):
+       choices = copy.copy(question['Choices'])
+       random.shuffle(choices)
+       return choices
+   
+   
+   def json_generate(self, template_file, path='docs'):
+      """Genera los archivos json a partir de las cuestiones."""
+      # Copy json images
+      questions_b64 = []
+      for question in self.questions:
+         if question['Image']:
+            origin = question['Image']['filename']
+            dest = os.path.join(path, 'images', question['Image']['hashname'])
+            if self.file_older(dest, origin):
+               print('   Writing: ' + origin)
+               shutil.copy2(origin, dest)
+         question_b64 = question
+         question_b64['Title'] = self.b64encode(question_b64['Title'])
+         question_b64['Question'] = self.b64encode(question_b64['Question'])
+         for i in range(len(question_b64['Choices'])):
+            try:
+               question_b64['Choices'][i] = self.b64encode(question_b64['Choices'][i])
+            except:
+               print('   Error in choice:', question_b64['Choices'][i])
+         questions_b64.append(question_b64)
+
+      # Generate and save json
+      json_filename = os.path.join(path, self.filename + '.json')
+      self.jinja_template(template_file)
+      json_data = self.template.render(questions = questions_b64)
+      self.write_file(json_filename, json_data)
+
+
+   def html_generate(self, template_file, path='./'):
+      """Genera los archivos html para jugar con las cuestiones."""
+      html_filename = os.path.join(path, self.filename + '.html')
+      self.jinja_template(template_file)
+      html_data = self.template.render(filename=self.filename, header=self.header)
+      self.write_file(html_filename, html_data)
+
+
+if __name__ == "__main__":
+   main()
